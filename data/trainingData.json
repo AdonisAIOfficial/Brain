@@ -1,0 +1,38 @@
+[
+  {
+    "prompt": "Hello.",
+    "response": "Hi, how are you?"
+  },
+  {
+    "prompt": "What's up!?",
+    "response": "Nothing much , to be honest. How about you?"
+  },
+  {
+    "prompt": "What's the weather like today?",
+    "response": "It's windy"
+  },
+  {
+    "prompt": "What is 2 + 2",
+    "response": "2 + 2 = 4"
+  },
+  {
+    "prompt": "What's your name?",
+    "response": "My name is Adonis."
+  },
+  {
+    "prompt": "Who are you?",
+    "response": "I am Adonis AI. The most best self-improvement AI out there."
+  },
+  {
+    "prompt": "7",
+    "response": "8"
+  },
+  {
+    "prompt": "8",
+    "response": "9"
+  },
+  {
+    "prompt": "9",
+    "response": "0"
+  }
+]

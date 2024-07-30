@@ -1,0 +1,21 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.20.0",
+    "@tensorflow/tfjs-node": "^4.20.0",
+    "mathjs": "^13.0.3",
+    "natural": "^7.1.0",
+    "readline-sync": "^1.4.10",
+    "seedrandom": "^3.0.5",
+    "sqlite3": "^5.1.7"
+  }
+}
