@@ -1,7 +1,7 @@
 const readline = require("readline");
-const { text2FloatArray, floatArray2Text } = require("./utils/process");
-const Brain = require("./utils/Brain"); // Updated Brain class
 const fs = require("fs");
+const { text2FloatArray, floatArray2Text } = require("./utils/process");
+const Adonis = require("./utils/Adonis.js"); // Import Adonis class
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -15,55 +15,33 @@ function readLine(query) {
     });
   });
 }
-const neuronDensity = 100;
-const sideLength = 1; // thats in cm
-const maxSynapseLength = 0.01; // keep this low
-const contextLength = 50;
-const plasticity = 0.1; // keep value low. This is how fast synapses strenghen or weaken
-const brain = new Brain(
-  neuronDensity,
-  sideLength,
-  maxSynapseLength,
-  contextLength,
-  plasticity,
-);
 
-// try {
-//   brain.loadModel("./models/model");
-//   console.log("Loaded model");
-// } catch (error) {
-console.log("New model created");
-brain.saveModel("./models/model");
-console.log("Model saved");
-// }
+// Initialize Adonis with required parameters
+const adonis = new Adonis(100, 64, 8, 6, 512, 0.01);
 
 async function main() {
   while (true) {
     let userMessage = await readLine("Message Adonis:\n");
     if (userMessage === "") {
-      brain.saveModel("./models/model");
       process.exit();
     }
 
     let response = await getAdonisResponse(userMessage);
-    console.log(`Adonis: ${response.text}`);
+    console.log(`Adonis: ${response}`);
 
     // let guide = await readLine("Guide: ");
     // if (guide != "") {
     //   let guideFloats = text2FloatArray(guide, contextLength);
     //   for (let i = 0; i < trainReps; i++) {
-    //     brain.Train([response.floats], [guideFloats], epochs);
+    //     adonis.Train([response.floats], [guideFloats], epochs);
     //   }
     // }
   }
 }
 
 async function getAdonisResponse(message) {
-  const inputFloats = text2FloatArray(message, contextLength);
-  const outputFloats = brain.feed(inputFloats);
-  console.log(outputFloats);
-  const outputText = floatArray2Text(outputFloats);
-  return { text: outputText, floats: outputFloats };
+  const response = adonis.inPut(message);
+  return response; // Adonis does not return float arrays in this implementation
 }
 
 main();
