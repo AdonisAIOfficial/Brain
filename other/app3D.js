@@ -15,11 +15,12 @@ function readLine(query) {
     });
   });
 }
-const neuronDensity = 100;
+const divider = 10000; // devides the neuron density for performance
+const neuronDensity = 10000000 / divider; // average of human brain per cm3 is 10M neurons
 const sideLength = 1; // thats in cm
-const maxSynapseLength = 0.01; // keep this low
+const maxSynapseLength = 0.1;
 const contextLength = 50;
-const plasticity = 0.1; // keep value low. This is how fast synapses strenghen or weaken
+const plasticity = 0.01; // keep value low. This is how fast synapses strenghen or weaken
 const brain = new Brain(
   neuronDensity,
   sideLength,
@@ -28,14 +29,14 @@ const brain = new Brain(
   plasticity,
 );
 
-// try {
-//   brain.loadModel("./models/model");
-//   console.log("Loaded model");
-// } catch (error) {
-console.log("New model created");
-brain.saveModel("./models/model");
-console.log("Model saved");
-// }
+try {
+  brain.loadModel("./models/model");
+  console.log("Loaded model");
+} catch (error) {
+  console.log("New model created");
+  brain.saveModel("./models/model");
+  console.log("Model saved");
+}
 
 async function main() {
   while (true) {

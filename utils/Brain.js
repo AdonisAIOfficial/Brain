@@ -1,27 +1,33 @@
 const fs = require("fs");
 
+// Your existing encoding and decoding functions
+const { text2FloatArray, floatArray2Text } = require("./textEncoding");
+
+// Define the Brain class
 class Brain {
   constructor(
     neuronDensity,
     sideLength,
     maxSynapseLength,
-    contextLength,
+    inputSize,
+    outputSize,
     plasticity,
   ) {
     this.neuronDensity = neuronDensity;
     this.sideLength = sideLength;
     this.maxSynapseLength = maxSynapseLength;
-    this.contextLength = contextLength;
+    this.inputSize = inputSize;
+    this.outputSize = outputSize;
     this.plasticity = plasticity;
 
     this.neurons = [];
     this.synapses = [];
-    this.entryNeurons = [];
-    this.exitNeuron = null;
+    this.inputNeurons = [];
+    this.outputNeurons = [];
 
-    this.volume = Math.pow(this.sideLength, 3);
-    this.totalNeurons = Math.floor(this.neuronDensity * this.volume);
-    this.neuronsPerDimension = Math.floor(Math.cbrt(this.totalNeurons));
+    this.area = Math.pow(this.sideLength, 2);
+    this.totalNeurons = Math.floor(this.neuronDensity * this.area);
+    this.neuronsPerDimension = Math.floor(Math.sqrt(this.totalNeurons));
     this.spacing = this.sideLength / this.neuronsPerDimension;
 
     this.initBrain();
@@ -32,9 +38,11 @@ class Brain {
   }
 
   initBrain() {
-    this.initializeNeurons();
-    this.createSynapses();
-    this.selectEntryAndExitNeurons();
+    if (this.neurons.length === 0) {
+      this.initializeNeurons();
+      this.createSynapses();
+      this.selectInputAndOutputNeurons();
+    }
   }
 
   initializeNeurons() {
@@ -42,31 +50,26 @@ class Brain {
 
     for (let x = 0; x < this.neuronsPerDimension; x++) {
       for (let y = 0; y < this.neuronsPerDimension; y++) {
-        for (let z = 0; z < this.neuronsPerDimension; z++) {
-          const basePosition = {
-            x: x * this.spacing,
-            y: y * this.spacing,
-            z: z * this.spacing,
-          };
+        const basePosition = {
+          x: x * this.spacing,
+          y: y * this.spacing,
+        };
 
-          const randomOffset = {
-            x: (Math.random() - 0.5) * 2 * offsetRange,
-            y: (Math.random() - 0.5) * 2 * offsetRange,
-            z: (Math.random() - 0.5) * 2 * offsetRange,
-          };
+        const randomOffset = {
+          x: (Math.random() - 0.5) * 2 * offsetRange,
+          y: (Math.random() - 0.5) * 2 * offsetRange,
+        };
 
-          this.neurons.push({
-            id: this.neurons.length,
-            position: {
+        this.neurons.push(
+          new Neuron(
+            this.neurons.length,
+            {
               x: basePosition.x + randomOffset.x,
               y: basePosition.y + randomOffset.y,
-              z: basePosition.z + randomOffset.z,
             },
-            potential: 0, // Membrane potential
-            threshold: Math.random() * 0.5 + 0.5, // Random threshold for firing
-            fired: false,
-          });
-        }
+            Math.random() * 0.5 + 0.5, // Random threshold for firing
+          ),
+        );
       }
     }
   }
@@ -79,16 +82,13 @@ class Brain {
 
         const distance = Math.sqrt(
           Math.pow(neuronA.position.x - neuronB.position.x, 2) +
-            Math.pow(neuronA.position.y - neuronB.position.y, 2) +
-            Math.pow(neuronA.position.z - neuronB.position.z, 2),
+            Math.pow(neuronA.position.y - neuronB.position.y, 2),
         );
 
         if (distance <= this.maxSynapseLength) {
-          this.synapses.push({
-            from: neuronA.id,
-            to: neuronB.id,
-            weight: Math.random(),
-          });
+          this.synapses.push(
+            new Synapse(neuronA.id, neuronB.id, Math.random()),
+          );
         }
       }
     }
@@ -96,51 +96,84 @@ class Brain {
     console.log(`Initialized ${this.synapses.length} synapses.`);
   }
 
-  selectEntryAndExitNeurons() {
-    if (this.neurons.length < this.contextLength + 1) {
-      throw new Error("Not enough neurons to select entry and exit neurons.");
+  selectInputAndOutputNeurons() {
+    if (this.neurons.length < this.inputSize + this.outputSize) {
+      throw new Error("Not enough neurons to select input and output neurons.");
     }
 
-    // Select entry neurons spread out in the network
-    const interval = Math.floor(this.neurons.length / this.contextLength);
-    for (let i = 0; i < this.contextLength; i++) {
-      this.entryNeurons.push(this.neurons[i * interval]);
+    // Select input neurons spread out in the network
+    const inputInterval = Math.floor(this.neurons.length / this.inputSize);
+    for (let i = 0; i < this.inputSize; i++) {
+      this.inputNeurons.push(this.neurons[i * inputInterval]);
     }
 
-    // Select an exit neuron that is not one of the entry neurons
-    let exitNeuronIndex;
-    do {
-      exitNeuronIndex = Math.floor(Math.random() * this.neurons.length);
-    } while (this.entryNeurons.some((neuron) => neuron.id === exitNeuronIndex));
+    // Select output neurons spread out in the network
+    const outputInterval = Math.floor(this.neurons.length / this.outputSize);
+    for (let i = 0; i < this.outputSize; i++) {
+      const neuronIndex = (i + 1) * outputInterval - 1;
+      if (neuronIndex < this.neurons.length) {
+        this.outputNeurons.push(this.neurons[neuronIndex]);
+      } else {
+        // Fallback if the calculated index is out of bounds
+        this.outputNeurons.push(this.neurons[this.neurons.length - 1]);
+      }
+    }
 
-    this.exitNeuron = this.neurons[exitNeuronIndex];
-
-    this.entryNeurons.forEach((neuron, index) => {
-      console.log(`Entry Neuron ${index} ID: ${neuron.id}`);
+    this.inputNeurons.forEach((neuron, index) => {
+      console.log(`Input Neuron ${index} ID: ${neuron.id}`);
     });
-    console.log(`Exit Neuron ID: ${this.exitNeuron.id}`);
+    this.outputNeurons.forEach((neuron, index) => {
+      console.log(`Output Neuron ${index} ID: ${neuron.id}`);
+    });
   }
 
-  feed(inputValues) {
-    if (
-      !Array.isArray(inputValues) ||
-      inputValues.length !== this.contextLength
-    ) {
+  // Tokenize and encode text input for the Brain
+  encodeText(text, length) {
+    const tokens = this.tokenize(text);
+    return tokens.map((token) => text2FloatArray(token, length));
+  }
+
+  // Decode and reconstruct text output from the Brain
+  decodeOutput(floatArrays) {
+    return floatArrays
+      .map((floatArray) => floatArray2Text(floatArray))
+      .join("");
+  }
+
+  // Tokenize input text into manageable units
+  tokenize(text) {
+    // Simple space-based tokenization
+    return text.split(" ").filter((token) => token.length > 0);
+  }
+
+  feed(inputText) {
+    // Encode the input text
+    const encodedInputs = this.encodeText(inputText, this.inputSize);
+
+    // Check if input size matches
+    if (encodedInputs.length !== this.inputNeurons.length) {
       throw new Error(
-        `Input values must be an array of length ${this.contextLength}.`,
+        `Input values must match the number of input neurons (${this.inputNeurons.length}).`,
       );
     }
 
-    // Set input values to entry neurons
-    this.entryNeurons.forEach((neuron, index) => {
-      neuron.potential += inputValues[index];
+    // Set input values to input neurons
+    this.inputNeurons.forEach((neuron, index) => {
+      neuron.potential = (neuron.potential || 0) + encodedInputs[index];
     });
 
-    // Propagate signals
+    // Propagate signals through the network
     this.propagateSignals();
 
-    // Apply sigmoid function to the exit neuron's potential
-    return this.sigmoid(this.exitNeuron.potential);
+    // Retrieve outputs from output neurons
+    const outputValues = this.outputNeurons.map((neuron) =>
+      this.sigmoid(neuron.potential),
+    );
+
+    // Decode the output values
+    const decodedOutput = this.decodeOutput(outputValues);
+
+    return decodedOutput;
   }
 
   propagateSignals() {
@@ -152,8 +185,10 @@ class Brain {
 
         let incomingSignal = 0;
         this.synapses.forEach((synapse) => {
-          if (synapse.to === neuron.id) {
-            const fromNeuron = this.neurons.find((n) => n.id === synapse.from);
+          if (synapse.target === neuron.id) {
+            const fromNeuron = this.neurons.find(
+              (n) => n.id === synapse.source,
+            );
             if (fromNeuron && fromNeuron.fired) {
               incomingSignal += fromNeuron.potential * synapse.weight;
               activeSynapses.add(synapse);
@@ -162,7 +197,6 @@ class Brain {
         });
 
         neuron.potential += incomingSignal;
-
         if (neuron.potential >= neuron.threshold) {
           neuron.fired = true;
         }
@@ -172,35 +206,31 @@ class Brain {
 
       // Apply decay to potentials
       this.neurons.forEach((neuron) => {
-        neuron.potential *= 0.9; // Decay factor
+        neuron.potential *= 0.999; // Decay factor
         neuron.fired = false;
+      });
+
+      // Debug: Log neuron potentials
+      this.neurons.forEach((neuron) => {
+        console.log(`Neuron ${neuron.id} Potential: ${neuron.potential}`);
       });
     }
   }
 
   updateSynapseWeights(activeSynapses) {
-    this.synapses.forEach((synapse) => {
-      const fromNeuron = this.neurons.find((n) => n.id === synapse.from);
-      const toNeuron = this.neurons.find((n) => n.id === synapse.to);
+    activeSynapses.forEach((synapse) => {
+      const sourceNeuron = this.neurons.find((n) => n.id === synapse.source);
+      const targetNeuron = this.neurons.find((n) => n.id === synapse.target);
 
-      if (activeSynapses.has(synapse)) {
-        // Hebbian learning: strengthen synapse if both neurons are active
-        if (fromNeuron.fired && toNeuron.fired) {
-          synapse.weight +=
-            this.plasticity * (fromNeuron.potential / toNeuron.potential);
-        } else {
-          synapse.weight += this.plasticity;
-        }
-      } else {
-        // Apply long-term depression if neurons are not active together
-        synapse.weight -= this.plasticity * 0.5;
+      if (sourceNeuron && targetNeuron) {
+        // Apply plasticity to adjust weights
+        synapse.weight +=
+          this.plasticity * (sourceNeuron.potential - targetNeuron.potential);
+
+        // Ensure weight stays within a reasonable range (optional)
+        synapse.weight = Math.max(0, Math.min(1, synapse.weight));
       }
-
-      // Clamp the weight to the range [0, 1]
-      synapse.weight = Math.max(0, Math.min(1, synapse.weight));
     });
-
-    console.log(`Updated ${this.synapses.length} synapses.`);
   }
 
   saveModel(filePath) {
@@ -211,8 +241,8 @@ class Brain {
       plasticity: this.plasticity,
       neurons: this.neurons,
       synapses: this.synapses,
-      entryNeurons: this.entryNeurons.map((neuron) => neuron.id),
-      exitNeuron: this.exitNeuron.id,
+      inputNeurons: this.inputNeurons.map((neuron) => neuron.id),
+      outputNeurons: this.outputNeurons.map((neuron) => neuron.id),
     };
 
     fs.writeFileSync(filePath, JSON.stringify(model, null, 2));
@@ -220,23 +250,48 @@ class Brain {
   }
 
   loadModel(filePath) {
-    const model = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const model = JSON.parse(fs.readFileSync(filePath));
 
     this.neuronDensity = model.neuronDensity;
     this.sideLength = model.sideLength;
     this.maxSynapseLength = model.maxSynapseLength;
     this.plasticity = model.plasticity;
-    this.neurons = model.neurons;
-    this.synapses = model.synapses;
-    this.entryNeurons = model.entryNeurons.map((id) =>
+
+    this.neurons = model.neurons.map(
+      (neuron) => new Neuron(neuron.id, neuron.position, neuron.threshold),
+    );
+    this.synapses = model.synapses.map(
+      (synapse) => new Synapse(synapse.source, synapse.target, synapse.weight),
+    );
+    this.inputNeurons = model.inputNeurons.map((id) =>
       this.neurons.find((neuron) => neuron.id === id),
     );
-    this.exitNeuron = this.neurons.find(
-      (neuron) => neuron.id === model.exitNeuron,
+    this.outputNeurons = model.outputNeurons.map((id) =>
+      this.neurons.find((neuron) => neuron.id === id),
     );
 
     console.log(`Model loaded from ${filePath}`);
   }
 }
 
+// Define Neuron and Synapse classes
+class Neuron {
+  constructor(id, position, threshold) {
+    this.id = id;
+    this.position = position;
+    this.threshold = threshold;
+    this.potential = 0;
+    this.fired = false;
+  }
+}
+
+class Synapse {
+  constructor(source, target, weight) {
+    this.source = source;
+    this.target = target;
+    this.weight = weight;
+  }
+}
+
+// Export the Brain class
 module.exports = Brain;
