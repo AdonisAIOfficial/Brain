@@ -17,13 +17,13 @@ function readLine(query) {
 
 // Create an instance of Adonis with appropriate parameters
 // const adonis = new Adonis(10000, 512, 16, 12, 256, 2048);
-const adonis = new Adonis(10000, 64, 4, 4, 128, 512);
+const adonis = new Adonis(10, 64, 4, 4, 128, 512);
 
 (async () => {
   try {
     // Load training text if model is not pre-trained (no loading/saving implemented)
     const trainingText = fs.readFileSync("./trainingText.txt", "utf-8");
-    await adonis.feed(trainingText);
+    adonis.learn(trainingText);
     console.log("Model trained.");
   } catch (error) {
     console.error("Error training model:", error);
@@ -45,7 +45,7 @@ const adonis = new Adonis(10000, 64, 4, 4, 128, 512);
 
   async function getAdonisResponse(message) {
     try {
-      const response = await adonis.predict(message);
+      const response = adonis.predict(message);
       return response;
     } catch (error) {
       console.error("Error generating response:", error);

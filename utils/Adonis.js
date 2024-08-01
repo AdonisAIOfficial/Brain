@@ -442,6 +442,75 @@ class Adonis {
     this.learningRate = 0.01; // Set learning rate
   }
 
+  learn(text, reps) {
+    const tokens = this.tokenizer.tokenize(text);
+    const inputIds = tokens.slice(0, -1); // All tokens except the last
+    const targetIds = tokens.slice(1); // All tokens except the first
+
+    // Convert to one-hot encoded vectors
+    const targetVectors = targetIds.map((id) => {
+      const vector = Array(this.tokenizer.nextId).fill(0);
+      vector[id] = 1;
+      return vector;
+    });
+
+    for (let epoch = 0; epoch < reps; epoch++) {
+      let totalLoss = 0;
+
+      for (let i = 0; i < inputIds.length; i++) {
+        const inputToken = [inputIds[i]]; // Input token
+        const targetToken = [targetVectors[i]]; // Target one-hot vector
+
+        // Forward pass
+        const embeddings = this.embeddingLayer.apply(inputToken);
+        const positionalEncoded = this.positionalEncoder.apply(embeddings);
+
+        let transformerOutput = positionalEncoded;
+        for (const layer of this.transformerLayers) {
+          transformerOutput = layer.apply(transformerOutput);
+        }
+
+        const logits = this.outputLayer.generate(transformerOutput);
+
+        // Calculate loss
+        const loss = this.calculateLoss([logits[0]], [targetVectors[i]]);
+        totalLoss += loss;
+
+        // Compute gradients and update weights
+        const gradients = this.calculateGradients(logits, [targetVectors[i]]);
+        this.updateWeights(gradients);
+      }
+
+      // Output average loss for this epoch
+      console.log(
+        `Epoch ${epoch + 1}/${reps}, Loss: ${totalLoss / inputIds.length}`,
+      );
+    }
+  }
+
+  predict(context, topK = 1) {
+    const inputTokens = this.tokenizer.tokenize(context);
+
+    if (inputTokens.length === 0) {
+      throw new Error("Input context is empty.");
+    }
+
+    const embeddings = this.embeddingLayer.apply(inputTokens);
+    const positionalEncoded = this.positionalEncoder.apply(embeddings);
+
+    let transformerOutput = positionalEncoded;
+    for (const layer of this.transformerLayers) {
+      transformerOutput = layer.apply(transformerOutput);
+    }
+
+    const logits = this.outputLayer.generate(transformerOutput);
+    const lastLogits = logits[logits.length - 1]; // Take logits for the last token
+    const sortedIndices = this.sortIndices(lastLogits);
+
+    const topIndices = sortedIndices.slice(0, topK);
+    return topIndices.map((index) => this.tokenizer.decode([index]));
+  }
+
   train(inputs, targets, reps) {
     for (let i = 0; i < reps; i++) {
       const embeddings = this.embeddingLayer.apply(inputs);
@@ -492,6 +561,13 @@ class Adonis {
         loss - targetsFlattened[i] * Math.log(1 + Math.exp(-logit)),
       0,
     );
+  }
+
+  sortIndices(array) {
+    return array
+      .map((value, index) => ({ value, index })) // Create an array of { value, index }
+      .sort((a, b) => b.value - a.value) // Sort by value in descending order
+      .map(({ index }) => index); // Extract indices
   }
 }
 
