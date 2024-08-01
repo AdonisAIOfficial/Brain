@@ -1,6 +1,20 @@
+const fs = require("fs");
+
+// Helper function to initialize weights
+function initWeights(inputDim, outputDim) {
+  return Array.from({ length: inputDim }, () =>
+    Array.from({ length: outputDim }, () => Math.random() * 0.1),
+  );
+}
+
+// Helper function to initialize biases
+function initBiases(dim) {
+  return Array.from({ length: dim }, () => 0);
+}
+
 class Tokenizer {
   constructor(initialVocabulary = {}) {
-    this.vocabulary = { ...initialVocabulary, "<stop>": 0 }; // Ensure stop token is included
+    this.vocabulary = { ...initialVocabulary, "<stop>": 0 };
     this.reverseVocabulary = Object.fromEntries(
       Object.entries(this.vocabulary).map(([k, v]) => [v, k]),
     );
@@ -9,9 +23,8 @@ class Tokenizer {
 
   tokenize(text) {
     const tokens = text.toLowerCase().match(/\w+|[^\w\s]/g) || [];
-    // console.log("Tokenizing:", tokens); // Debug statement
     return tokens.map((token) => {
-      if (!this.vocabulary.hasOwnProperty(token)) {
+      if (!(token in this.vocabulary)) {
         this.vocabulary[token] = this.nextId++;
         this.reverseVocabulary[this.vocabulary[token]] = token;
       }
@@ -20,80 +33,38 @@ class Tokenizer {
   }
 
   decode(ids) {
-    // console.log("Decoding IDs:", ids); // Debug statement
-    // console.log(`Vocab: ${Object.keys(this.vocabulary).length}`);
     return ids.map((id) => this.reverseVocabulary[id] || "<unk>").join(" ");
   }
 }
 
 class EmbeddingLayer {
-  constructor(vocabSize, embeddingDim, plasticity) {
-    this.vocabSize = vocabSize;
+  constructor(vocabSize, embeddingDim) {
     this.embeddingDim = embeddingDim;
-    this.plasticity = plasticity;
-    this.embeddings = this.initEmbeddings();
-  }
-
-  initEmbeddings() {
-    return Array.from({ length: this.vocabSize }, () =>
-      Array.from({ length: this.embeddingDim }, () => Math.random() * 0.1),
+    this.embeddings = Array.from({ length: vocabSize }, () =>
+      Array.from({ length: embeddingDim }, () => Math.random() * 0.1),
     );
   }
 
   apply(tokens) {
-    // console.log("Applying embeddings to tokens:", tokens); // Debug statement
-    return tokens.map((tokenId) => {
-      if (tokenId >= this.embeddings.length) {
-        this.addNewEmbedding(tokenId);
-      }
-      return this.embeddings[tokenId].map(
-        (val) => val + (Math.random() - 0.5) * this.plasticity,
-      );
-    });
-  }
-
-  addNewEmbedding(tokenId) {
-    while (this.embeddings.length <= tokenId) {
-      this.embeddings.push(
+    return tokens.map(
+      (tokenId) =>
+        this.embeddings[tokenId] ||
         Array.from({ length: this.embeddingDim }, () => Math.random() * 0.1),
-      );
-    }
-    if (this.embeddings[tokenId] === undefined) {
-      this.embeddings[tokenId] = Array.from(
-        { length: this.embeddingDim },
-        () => Math.random() * 0.1,
-      );
-    }
-  }
-
-  adjustWeightsBasedOnReward(reward) {
-    this.embeddings = this.embeddings.map((embedding) =>
-      embedding.map((val) => val + (Math.random() - 0.5) * reward),
     );
   }
 }
 
 class PositionalEncoder {
   constructor(maxSeqLength, embeddingDim) {
-    this.maxSeqLength = maxSeqLength;
-    this.embeddingDim = embeddingDim;
-    this.positionalEncodings = this.initPositionalEncodings();
-  }
-
-  initPositionalEncodings() {
-    const posEncodings = Array.from({ length: this.maxSeqLength }, (_, pos) =>
+    this.positionalEncodings = Array.from({ length: maxSeqLength }, (_, pos) =>
       Array.from(
-        { length: this.embeddingDim },
-        (_, i) => pos / Math.pow(10000, (2 * (i / 2)) / this.embeddingDim),
-      ),
-    );
-    return posEncodings.map((encoding, pos) =>
-      encoding.map((val, i) => (i % 2 === 0 ? Math.sin(val) : Math.cos(val))),
+        { length: embeddingDim },
+        (_, i) => pos / Math.pow(10000, (2 * (i / 2)) / embeddingDim),
+      ).map((val, i) => (i % 2 === 0 ? Math.sin(val) : Math.cos(val))),
     );
   }
 
   apply(embeddings) {
-    // console.log("Applying positional encoding:", embeddings); // Debug statement
     return embeddings.map((embedding, pos) =>
       embedding.map(
         (val, i) => val + (this.positionalEncodings[pos] || [])[i] || 0,
@@ -102,23 +73,246 @@ class PositionalEncoder {
   }
 }
 
-class TransformerLayer {
-  constructor(numHeads, embeddingDim, plasticity) {
-    this.numHeads = numHeads;
-    this.embeddingDim = embeddingDim;
-    this.plasticity = plasticity;
-    this.multiHeadAttention = new MultiHeadAttention(numHeads, embeddingDim);
-    this.feedForward = new FeedForwardNetwork(embeddingDim, plasticity);
-    this.layerNorm1 = new LayerNormalization(embeddingDim);
-    this.layerNorm2 = new LayerNormalization(embeddingDim);
+class LinearTransformation {
+  constructor(inputDim, outputDim) {
+    this.weights = initWeights(inputDim, outputDim);
+    this.biases = initBiases(outputDim);
+    this.weightGradients = Array.from({ length: inputDim }, () =>
+      Array.from({ length: outputDim }, () => 0),
+    );
+    this.biasGradients = Array.from({ length: outputDim }, () => 0);
   }
 
   apply(inputs) {
-    // console.log("Applying transformer layer:", inputs); // Debug statement
-    const attentionOutput = this.multiHeadAttention.apply(inputs);
-    const attentionResidual = this.layerNorm1.apply(inputs, attentionOutput);
-    const feedForwardOutput = this.feedForward.apply(attentionResidual);
-    return this.layerNorm2.apply(attentionResidual, feedForwardOutput);
+    this.lastInputs = inputs;
+    return inputs.map((row) =>
+      Array.from(
+        { length: this.biases.length },
+        (_, col) =>
+          row.reduce(
+            (sum, val, rowIdx) => sum + val * this.weights[rowIdx][col],
+            0,
+          ) + this.biases[col],
+      ),
+    );
+  }
+
+  computeGradients(gradients) {
+    const inputTranspose = this.lastInputs[0].map((_, colIndex) =>
+      this.lastInputs.map((row) => row[colIndex]),
+    );
+
+    this.weightGradients = inputTranspose.map((inputRow, rowIndex) =>
+      gradients[0].map((_, colIndex) =>
+        inputRow.reduce(
+          (sum, inputVal, inputIndex) =>
+            sum + inputVal * gradients[inputIndex][colIndex],
+          0,
+        ),
+      ),
+    );
+
+    this.biasGradients = gradients[0].map((_, colIndex) =>
+      gradients.reduce((sum, row) => sum + row[colIndex], 0),
+    );
+  }
+
+  updateWeights(learningRate) {
+    this.weights = this.weights.map((row, rowIndex) =>
+      row.map(
+        (val, colIndex) =>
+          val - learningRate * this.weightGradients[rowIndex][colIndex],
+      ),
+    );
+
+    this.biases = this.biases.map(
+      (val, colIndex) => val - learningRate * this.biasGradients[colIndex],
+    );
+  }
+}
+class LayerNormalization {
+  constructor(embeddingDim, epsilon = 1e-6) {
+    this.embeddingDim = embeddingDim;
+    this.epsilon = epsilon; // Small constant to avoid division by zero
+    this.gamma = Array.from({ length: embeddingDim }, () => 1); // Scale parameter
+    this.beta = Array.from({ length: embeddingDim }, () => 0); // Shift parameter
+    this.inputMean = Array.from({ length: embeddingDim }, () => 0);
+    this.inputVariance = Array.from({ length: embeddingDim }, () => 0);
+  }
+
+  apply(inputs, residual) {
+    const normalizedInputs = inputs.map((row) => {
+      const mean = row.reduce((sum, val) => sum + val, 0) / this.embeddingDim;
+      const variance =
+        row.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) /
+        this.embeddingDim;
+
+      this.inputMean = mean;
+      this.inputVariance = variance;
+
+      return row.map(
+        (val) =>
+          ((val - mean) / Math.sqrt(variance + this.epsilon)) *
+            this.gamma[row.indexOf(val)] +
+          this.beta[row.indexOf(val)],
+      );
+    });
+
+    // Add the residual connection
+    return normalizedInputs.map((row, i) =>
+      row.map((val, j) => val + (residual[i] ? residual[i][j] : 0)),
+    );
+  }
+
+  computeGradients(gradients, inputs) {
+    // Gradients for gamma and beta
+    const gradGamma = inputs.map((row, rowIdx) =>
+      row.map(
+        (val, colIdx) =>
+          (gradients[rowIdx][colIdx] * (val - this.inputMean)) /
+          Math.sqrt(this.inputVariance + this.epsilon),
+      ),
+    );
+
+    const gradBeta = gradients.map((row, rowIdx) => row.map((val) => val));
+
+    // Update gamma and beta
+    this.gamma = this.gamma.map(
+      (val, idx) => val - 0.01 * gradGamma.flat()[idx],
+    );
+    this.beta = this.beta.map((val, idx) => val - 0.01 * gradBeta.flat()[idx]);
+  }
+}
+
+class AttentionHead {
+  constructor(dim) {
+    this.dim = dim;
+    this.queryWeights = initWeights(dim, dim);
+    this.keyWeights = initWeights(dim, dim);
+    this.valueWeights = initWeights(dim, dim);
+    this.outputWeights = initWeights(dim, dim);
+
+    // Gradients for weights
+    this.queryGradients = initWeights(dim, dim);
+    this.keyGradients = initWeights(dim, dim);
+    this.valueGradients = initWeights(dim, dim);
+    this.outputGradients = initWeights(dim, dim);
+  }
+
+  apply(inputs) {
+    const queries = this.transform(inputs, this.queryWeights);
+    const keys = this.transform(inputs, this.keyWeights);
+    const values = this.transform(inputs, this.valueWeights);
+
+    const attentionScores = this.computeAttentionScores(queries, keys);
+    const weightedValues = this.applyAttentionToValues(attentionScores, values);
+    return this.transform(weightedValues, this.outputWeights);
+  }
+
+  transform(inputs, weights) {
+    return inputs.map((input) =>
+      Array.from({ length: weights[0].length }, (_, col) =>
+        input.reduce((sum, val, rowIdx) => sum + val * weights[rowIdx][col], 0),
+      ),
+    );
+  }
+
+  computeAttentionScores(queries, keys) {
+    return queries.map((query) =>
+      keys.map((key) => query.reduce((sum, q, i) => sum + q * key[i], 0)),
+    );
+  }
+
+  applyAttentionToValues(attentionScores, values) {
+    const attentionWeights = this.softmax(attentionScores);
+    return attentionWeights.map((weights, i) =>
+      weights.reduce(
+        (weightedSum, weight, j) =>
+          weightedSum.map((val, k) => val + weight * values[j][k]),
+        Array.from({ length: values[0].length }, () => 0),
+      ),
+    );
+  }
+
+  softmax(scores) {
+    return scores.map((row) => {
+      const maxScore = Math.max(...row);
+      const expScores = row.map((score) => Math.exp(score - maxScore));
+      const sumExpScores = expScores.reduce((a, b) => a + b, 0);
+      return expScores.map((score) => score / sumExpScores);
+    });
+  }
+
+  computeGradients(attentionGradients) {
+    // Compute gradients for attention head weights
+    const weightGradients = this.transformGradient(
+      attentionGradients,
+      this.queryWeights,
+    );
+    this.queryGradients = weightGradients.query;
+    this.keyGradients = weightGradients.key;
+    this.valueGradients = weightGradients.value;
+    this.outputGradients = weightGradients.output;
+  }
+
+  transformGradient(attentionGradients, weights) {
+    const inputGradients = attentionGradients.map((row, rowIndex) =>
+      weights[0].map((_, colIndex) =>
+        row.reduce(
+          (sum, val, rowIdx) => sum + val * weights[rowIdx][colIndex],
+          0,
+        ),
+      ),
+    );
+
+    return {
+      query: this.computeWeightGradients(inputGradients, this.queryWeights),
+      key: this.computeWeightGradients(inputGradients, this.keyWeights),
+      value: this.computeWeightGradients(inputGradients, this.valueWeights),
+      output: this.computeWeightGradients(inputGradients, this.outputWeights),
+    };
+  }
+
+  computeWeightGradients(inputGradients, weights) {
+    return weights.map((row, rowIndex) =>
+      row.map((_, colIndex) =>
+        inputGradients.reduce(
+          (sum, inputGrad, rowIdx) =>
+            sum + inputGrad[rowIdx] * weights[rowIdx][colIndex],
+          0,
+        ),
+      ),
+    );
+  }
+
+  updateWeights(learningRate) {
+    this.queryWeights = this.queryWeights.map((row, rowIndex) =>
+      row.map(
+        (val, colIndex) =>
+          val - learningRate * this.queryGradients[rowIndex][colIndex],
+      ),
+    );
+
+    this.keyWeights = this.keyWeights.map((row, rowIndex) =>
+      row.map(
+        (val, colIndex) =>
+          val - learningRate * this.keyGradients[rowIndex][colIndex],
+      ),
+    );
+
+    this.valueWeights = this.valueWeights.map((row, rowIndex) =>
+      row.map(
+        (val, colIndex) =>
+          val - learningRate * this.valueGradients[rowIndex][colIndex],
+      ),
+    );
+
+    this.outputWeights = this.outputWeights.map((row, rowIndex) =>
+      row.map(
+        (val, colIndex) =>
+          val - learningRate * this.outputGradients[rowIndex][colIndex],
+      ),
+    );
   }
 }
 
@@ -126,342 +320,179 @@ class MultiHeadAttention {
   constructor(numHeads, embeddingDim) {
     this.numHeads = numHeads;
     this.embeddingDim = embeddingDim;
-    this.attentionHeads = Array.from(
+    this.heads = Array.from(
       { length: numHeads },
-      () => new AttentionHead(embeddingDim / numHeads),
+      () => new AttentionHead(embeddingDim),
     );
-    this.linear = new LinearTransformation(embeddingDim, embeddingDim);
   }
 
   apply(inputs) {
-    const headOutputs = this.attentionHeads.map((head) => head.apply(inputs));
-    const concatenated = this.concatenate(headOutputs);
-    return this.linear.apply(concatenated);
+    const headOutputs = this.heads.map((head) => head.apply(inputs));
+    return this.concatenateHeads(headOutputs);
   }
 
-  concatenate(headOutputs) {
-    const headOutputLength = headOutputs[0][0].length;
-    return Array.from({ length: headOutputs[0].length }, (_, rowIdx) =>
-      headOutputs.map((headOutput) => headOutput[rowIdx]),
+  concatenateHeads(headOutputs) {
+    return headOutputs[0].map((_, colIndex) =>
+      headOutputs.map((headOutput) => headOutput.map((row) => row[colIndex])),
     );
   }
-}
 
-class AttentionHead {
-  constructor(dim) {
-    this.dim = dim;
-    this.queryWeights = this.initWeights(dim);
-    this.keyWeights = this.initWeights(dim);
-    this.valueWeights = this.initWeights(dim);
-    this.outputWeights = this.initWeights(dim);
-  }
-
-  initWeights(dim) {
-    return Array.from({ length: dim }, () => Math.random() * 0.1);
-  }
-
-  apply(inputs) {
-    const queries = this.transform(inputs, this.queryWeights);
-    const keys = this.transform(inputs, this.keyWeights);
-    const values = this.transform(inputs, this.valueWeights);
-    return this.transform(values, this.outputWeights);
-  }
-
-  transform(inputs, weights) {
-    return inputs.map((input) =>
-      Array.from({ length: weights.length }, (_, col) =>
-        input.reduce((sum, val, rowIdx) => sum + val * weights[rowIdx], 0),
-      ),
+  computeGradients(attentionGradients) {
+    // Compute gradients for all attention heads
+    this.heads.forEach((head, index) =>
+      head.computeGradients(attentionGradients[index]),
     );
+  }
+
+  updateWeights(learningRate) {
+    // Update weights for all attention heads
+    this.heads.forEach((head) => head.updateWeights(learningRate));
   }
 }
 
 class FeedForwardNetwork {
-  constructor(embeddingDim, plasticity) {
-    this.embeddingDim = embeddingDim;
-    this.plasticity = plasticity;
-    this.fc1 = new LinearTransformation(
-      embeddingDim,
-      embeddingDim * 4,
-      plasticity,
-    );
-    this.fc2 = new LinearTransformation(
-      embeddingDim * 4,
-      embeddingDim,
-      plasticity,
-    );
+  constructor(embeddingDim) {
+    this.fc1 = new LinearTransformation(embeddingDim, embeddingDim * 4);
+    this.fc2 = new LinearTransformation(embeddingDim * 4, embeddingDim);
   }
 
   apply(inputs) {
     const hidden = this.fc1.apply(inputs);
-    const activated = hidden.map((row) => row.map((val) => Math.max(0, val)));
-    return this.fc2.apply(activated);
+    const reluHidden = hidden.map((row) => row.map((val) => Math.max(0, val)));
+    return this.fc2.apply(reluHidden);
+  }
+
+  computeGradients(outputGradients) {
+    // Backpropagation through feed-forward network
+    const fc2Gradients = this.fc2.applyGradient(outputGradients);
+    this.fc2.computeGradients(outputGradients);
+    const hiddenGradients = this.fc1.applyGradient(fc2Gradients);
+    this.fc1.computeGradients(hiddenGradients);
+  }
+
+  updateWeights(learningRate) {
+    this.fc1.updateWeights(learningRate);
+    this.fc2.updateWeights(learningRate);
   }
 }
 
-class LinearTransformation {
-  constructor(inputDim, outputDim, plasticity = 0) {
-    this.inputDim = inputDim;
-    this.outputDim = outputDim;
-    this.plasticity = plasticity;
-    this.weights = this.initWeights(inputDim, outputDim);
-    this.biases = Array.from({ length: outputDim }, () => 0);
-  }
-
-  initWeights(inputDim, outputDim) {
-    return Array.from({ length: inputDim }, () =>
-      Array.from({ length: outputDim }, () => Math.random() * 0.1),
-    );
+class TransformerLayer {
+  constructor(numHeads, embeddingDim) {
+    this.attention = new MultiHeadAttention(numHeads, embeddingDim);
+    this.feedForward = new FeedForwardNetwork(embeddingDim);
+    this.layerNorm1 = new LayerNormalization(embeddingDim);
+    this.layerNorm2 = new LayerNormalization(embeddingDim);
   }
 
   apply(inputs) {
-    return inputs
-      .map((row) =>
-        Array.from(
-          { length: this.outputDim },
-          (_, col) =>
-            row.reduce(
-              (sum, val, rowIdx) => sum + val * this.weights[rowIdx][col],
-              0,
-            ) + this.biases[col],
-        ),
-      )
-      .map((row) =>
-        row.map((val) => val + (Math.random() - 0.5) * this.plasticity),
-      );
+    const attentionOutput = this.attention.apply(inputs);
+    const normalizedAttention = this.layerNorm1.apply(attentionOutput, inputs);
+    const feedForwardOutput = this.feedForward.apply(normalizedAttention);
+    return this.layerNorm2.apply(feedForwardOutput, normalizedAttention);
+  }
+
+  computeGradients() {
+    // Compute gradients for attention and feed-forward layers
+    this.attention.computeGradients();
+    this.feedForward.computeGradients();
+  }
+
+  updateWeights(learningRate) {
+    this.attention.updateWeights(learningRate);
+    this.feedForward.updateWeights(learningRate);
   }
 }
 
 class OutputLayer {
   constructor(embeddingDim, vocabSize) {
-    this.embeddingDim = embeddingDim;
-    this.vocabSize = vocabSize;
-    this.linear = new LinearTransformation(embeddingDim, vocabSize);
+    this.fc = new LinearTransformation(embeddingDim, vocabSize);
   }
 
   generate(inputs) {
-    const logits = this.linear.apply(inputs);
-    return this.softmax(logits);
+    return this.fc.apply(inputs);
   }
 
-  softmax(logits) {
-    return logits.map((row) => {
-      const maxLogit = Math.max(...row);
-      const expScores = row.map((score) => Math.exp(score - maxLogit));
-      const sumExpScores = expScores.reduce((a, b) => a + b, 0);
-      return expScores.map((score) => score / sumExpScores);
+  computeGradients(logits, targets) {
+    // Compute gradients for the output layer using cross-entropy loss
+    const logitsFlattened = logits.flat();
+    const targetsFlattened = targets.flat();
+    const outputGradients = logitsFlattened.map((logit, i) => {
+      const target = targetsFlattened[i];
+      const predicted = Math.exp(logit) / (1 + Math.exp(logit));
+      return predicted - target;
     });
+    this.fc.computeGradients(outputGradients);
+  }
+
+  updateWeights(learningRate) {
+    this.fc.updateWeights(learningRate);
   }
 }
-
-class LayerNormalization {
-  constructor(embeddingDim) {
-    this.embeddingDim = embeddingDim;
-    this.gamma = Array.from({ length: embeddingDim }, () => 1);
-    this.beta = Array.from({ length: embeddingDim }, () => 0);
-  }
-
-  apply(inputs, residual) {
-    const mean = inputs[0].map(
-      (_, j) => inputs.reduce((sum, row) => sum + row[j], 0) / inputs.length,
-    );
-    const variance = inputs[0].map(
-      (_, j) =>
-        inputs.reduce((sum, row) => sum + (row[j] - mean[j]) ** 2, 0) /
-        inputs.length,
-    );
-
-    const normalized = inputs.map((row) =>
-      row.map((val, j) => (val - mean[j]) / Math.sqrt(variance[j] + 1e-6)),
-    );
-
-    return normalized.map((row, i) =>
-      row.map((val, j) => val * this.gamma[j] + this.beta[j]),
-    );
-  }
-}
-
-const fs = require("fs");
 
 class Adonis {
-  constructor(
-    vocabSize,
-    embeddingDim,
-    numHeads,
-    numLayers,
-    maxSeqLength,
-    plasticity,
-  ) {
-    this.vocabSize = vocabSize;
-    this.embeddingDim = embeddingDim;
-    this.numHeads = numHeads;
-    this.numLayers = numLayers;
-    this.maxSeqLength = maxSeqLength;
-    this.plasticity = plasticity;
-    this.vocabulary = {}; // Initialize empty vocabulary
-    this.tokenizer = new Tokenizer(this.vocabulary);
-    this.embeddingLayer = new EmbeddingLayer(
-      vocabSize,
-      embeddingDim,
-      plasticity,
-    );
+  constructor(vocabSize, embeddingDim, numHeads, numLayers, maxSeqLength) {
+    this.tokenizer = new Tokenizer();
+    this.embeddingLayer = new EmbeddingLayer(vocabSize, embeddingDim);
     this.positionalEncoder = new PositionalEncoder(maxSeqLength, embeddingDim);
-    this.transformerLayers = this.initTransformerLayers(
-      numLayers,
-      numHeads,
-      embeddingDim,
-      plasticity,
+    this.transformerLayers = Array.from(
+      { length: numLayers },
+      () => new TransformerLayer(numHeads, embeddingDim),
     );
     this.outputLayer = new OutputLayer(embeddingDim, vocabSize);
+    this.learningRate = 0.01; // Set learning rate
   }
 
-  initTransformerLayers(numLayers, numHeads, embeddingDim, plasticity) {
-    return Array.from(
-      { length: numLayers },
-      () => new TransformerLayer(numHeads, embeddingDim, plasticity),
-    );
-  }
+  train(inputs, targets, reps) {
+    for (let i = 0; i < reps; i++) {
+      const embeddings = this.embeddingLayer.apply(inputs);
+      const positionalEncoded = this.positionalEncoder.apply(embeddings);
 
-  inPut(text, reward = 0) {
-    const tokens = this.tokenizer.tokenize(text);
-    const embeddedTokens = this.embeddingLayer.apply(tokens);
-    const positionalEncoded = this.positionalEncoder.apply(embeddedTokens);
-
-    let transformerOutput = positionalEncoded;
-    let outputTokens = [];
-
-    while (true) {
-      // Apply transformer layers
+      let transformerOutput = positionalEncoded;
       for (const layer of this.transformerLayers) {
         transformerOutput = layer.apply(transformerOutput);
       }
 
-      // Generate output logits
       const logits = this.outputLayer.generate(transformerOutput);
+      const loss = this.calculateLoss(logits, targets);
 
-      // Get the token with the highest probability
-      const predictedTokenId = logits[0].indexOf(Math.max(...logits[0]));
+      // Compute gradients
+      this.computeGradients(logits, targets);
 
-      // Check if the stop token is generated
-      if (predictedTokenId === this.tokenizer.vocabulary["<stop>"]) {
-        break;
-      }
-
-      outputTokens.push(predictedTokenId);
-
-      // Update embeddings based on reward (example)
-      this.embeddingLayer.adjustWeightsBasedOnReward(reward);
-
-      // Prepare for the next iteration
-      transformerOutput = this.embeddingLayer.apply([predictedTokenId]);
-      transformerOutput = this.positionalEncoder.apply(transformerOutput);
+      // Update weights
+      this.updateWeights();
     }
-
-    return this.tokenizer.decode(outputTokens);
   }
 
-  // Save the state to a JSON file
-  save(filePath) {
-    const state = {
-      vocabSize: this.vocabSize,
-      embeddingDim: this.embeddingDim,
-      numHeads: this.numHeads,
-      numLayers: this.numLayers,
-      maxSeqLength: this.maxSeqLength,
-      plasticity: this.plasticity,
-      vocabulary: this.tokenizer.vocabulary,
-      embeddings: this.embeddingLayer.embeddings,
-      positionalEncodings: this.positionalEncoder.positionalEncodings,
-      transformerLayers: this.transformerLayers.map((layer) => ({
-        multiHeadAttention: {
-          numHeads: layer.multiHeadAttention.numHeads,
-          embeddingDim: layer.multiHeadAttention.embeddingDim,
-        },
-        feedForward: {
-          embeddingDim: layer.feedForward.embeddingDim,
-          plasticity: layer.feedForward.plasticity,
-        },
-        layerNorm1: {
-          gamma: layer.layerNorm1.gamma,
-          beta: layer.layerNorm1.beta,
-        },
-        layerNorm2: {
-          gamma: layer.layerNorm2.gamma,
-          beta: layer.layerNorm2.beta,
-        },
-      })),
-      outputLayer: {
-        embeddingDim: this.outputLayer.embeddingDim,
-        vocabSize: this.outputLayer.vocabSize,
-      },
-    };
-
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
+  computeGradients(logits, targets) {
+    // Compute gradients for output layer
+    this.outputLayer.computeGradients(logits, targets);
+    // Compute gradients for transformer layers
+    for (const layer of this.transformerLayers) {
+      layer.computeGradients();
+    }
+    // Compute gradients for embedding and positional encoding layers if needed
   }
 
-  // Load the state from a JSON file
-  load(filePath) {
-    const state = JSON.parse(fs.readFileSync(filePath));
+  updateWeights() {
+    // Update weights for output layer
+    this.outputLayer.updateWeights(this.learningRate);
+    // Update weights for transformer layers
+    for (const layer of this.transformerLayers) {
+      layer.updateWeights(this.learningRate);
+    }
+    // Update weights for embedding and positional encoding layers if needed
+  }
 
-    this.vocabSize = state.vocabSize;
-    this.embeddingDim = state.embeddingDim;
-    this.numHeads = state.numHeads;
-    this.numLayers = state.numLayers;
-    this.maxSeqLength = state.maxSeqLength;
-    this.plasticity = state.plasticity;
-    this.tokenizer = new Tokenizer(state.vocabulary);
-    this.embeddingLayer = new EmbeddingLayer(
-      this.vocabSize,
-      this.embeddingDim,
-      this.plasticity,
+  calculateLoss(logits, targets) {
+    // Implement cross-entropy loss
+    const logitsFlattened = logits.flat();
+    const targetsFlattened = targets.flat();
+    return logitsFlattened.reduce(
+      (loss, logit, i) =>
+        loss - targetsFlattened[i] * Math.log(1 + Math.exp(-logit)),
+      0,
     );
-    this.positionalEncoder = new PositionalEncoder(
-      this.maxSeqLength,
-      this.embeddingDim,
-    );
-    this.transformerLayers = state.transformerLayers.map((layerData) => {
-      const transformerLayer = new TransformerLayer(
-        layerData.multiHeadAttention.numHeads,
-        layerData.multiHeadAttention.embeddingDim,
-        layerData.feedForward.plasticity,
-      );
-      transformerLayer.multiHeadAttention.attentionHeads.forEach((head, i) => {
-        head.queryWeights =
-          state.transformerLayers[i].multiHeadAttention.queryWeights;
-        head.keyWeights =
-          state.transformerLayers[i].multiHeadAttention.keyWeights;
-        head.valueWeights =
-          state.transformerLayers[i].multiHeadAttention.valueWeights;
-        head.outputWeights =
-          state.transformerLayers[i].multiHeadAttention.outputWeights;
-      });
-      transformerLayer.feedForward.fc1.weights =
-        state.transformerLayers[i].feedForward.fc1.weights;
-      transformerLayer.feedForward.fc1.biases =
-        state.transformerLayers[i].feedForward.fc1.biases;
-      transformerLayer.feedForward.fc2.weights =
-        state.transformerLayers[i].feedForward.fc2.weights;
-      transformerLayer.feedForward.fc2.biases =
-        state.transformerLayers[i].feedForward.fc2.biases;
-      transformerLayer.layerNorm1.gamma =
-        state.transformerLayers[i].layerNorm1.gamma;
-      transformerLayer.layerNorm1.beta =
-        state.transformerLayers[i].layerNorm1.beta;
-      transformerLayer.layerNorm2.gamma =
-        state.transformerLayers[i].layerNorm2.gamma;
-      transformerLayer.layerNorm2.beta =
-        state.transformerLayers[i].layerNorm2.beta;
-      return transformerLayer;
-    });
-    this.outputLayer = new OutputLayer(
-      state.outputLayer.embeddingDim,
-      state.outputLayer.vocabSize,
-    );
-    this.embeddingLayer.embeddings = state.embeddings;
-    this.positionalEncoder.positionalEncodings = state.positionalEncodings;
   }
 }
 
-module.exports = Adonis;
-
-module.exports = Adonis;
+module.exports = { Adonis };

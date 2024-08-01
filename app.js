@@ -1,7 +1,6 @@
 const readline = require("readline");
 const fs = require("fs");
-const { text2FloatArray, floatArray2Text } = require("./utils/process");
-const Adonis = require("./utils/Adonis.js"); // Import Adonis class
+const { Adonis } = require("./utils/Adonis.js"); // Import Adonis class
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -16,32 +15,43 @@ function readLine(query) {
   });
 }
 
-// Initialize Adonis with required parameters
-const adonis = new Adonis(100, 64, 8, 6, 512, 0.01);
+// Create an instance of Adonis with appropriate parameters
+// const adonis = new Adonis(10000, 512, 16, 12, 256, 2048);
+const adonis = new Adonis(10000, 64, 4, 4, 128, 512);
 
-async function main() {
-  while (true) {
-    let userMessage = await readLine("Message Adonis:\n");
-    if (userMessage === "") {
-      process.exit();
-    }
-
-    let response = await getAdonisResponse(userMessage);
-    console.log(`Adonis: ${response}`);
-
-    // let guide = await readLine("Guide: ");
-    // if (guide != "") {
-    //   let guideFloats = text2FloatArray(guide, contextLength);
-    //   for (let i = 0; i < trainReps; i++) {
-    //     adonis.Train([response.floats], [guideFloats], epochs);
-    //   }
-    // }
+(async () => {
+  try {
+    // Load training text if model is not pre-trained (no loading/saving implemented)
+    const trainingText = fs.readFileSync("./trainingText.txt", "utf-8");
+    await adonis.feed(trainingText);
+    console.log("Model trained.");
+  } catch (error) {
+    console.error("Error training model:", error);
+    process.exit(1);
   }
-}
 
-async function getAdonisResponse(message) {
-  const response = adonis.inPut(message);
-  return response; // Adonis does not return float arrays in this implementation
-}
+  async function main() {
+    while (true) {
+      let userMessage = await readLine("Message Adonis:\n");
+      if (userMessage === "") {
+        console.log("Exiting...");
+        process.exit();
+      }
 
-main();
+      let response = await getAdonisResponse(userMessage);
+      console.log(`Adonis: ${response}`);
+    }
+  }
+
+  async function getAdonisResponse(message) {
+    try {
+      const response = await adonis.predict(message);
+      return response;
+    } catch (error) {
+      console.error("Error generating response:", error);
+      return "Sorry, I couldn't understand that.";
+    }
+  }
+
+  await main();
+})();
